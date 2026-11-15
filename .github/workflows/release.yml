@@ -68,11 +68,7 @@ jobs:
           if ($tag -notmatch '^v\d+\.\d+\.\d+-build\.\d+\.[0-9a-f]{7}$') { throw "Unexpected tag '$tag'." }
 
           $notes = @(
-            'Windows 10/11 x64 with .NET Framework 4.8. No installer: download `LittleArmoury.exe` and run it.'
-            ''
-            '`LittleArmoury-portable.zip` holds the same EXE with its config file, README and license.'
-            ''
-            "Built from $env:GITHUB_SHA."
+            'Download `LittleArmoury.exe` and run it. There is no installer.'
           )
           Set-Content -LiteralPath (Join-Path $out 'notes.md') -Value $notes -Encoding utf8
 
