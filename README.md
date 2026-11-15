@@ -6,11 +6,9 @@ A small native Windows app for ASUS operating modes, fan curves and hardware sta
 
 ## Download
 
-Download **LittleArmoury-portable.zip** from the [latest release](https://github.com/botkooper/little-armoury/releases/latest), extract it and run `LittleArmoury.exe`. Releases also include the executable separately.
+**[Download LittleArmoury.exe](https://github.com/botkooper/little-armoury/releases/latest/download/LittleArmoury.exe)** and run it. There is no installer.
 
-Requires Windows 10/11 x64, .NET Framework 4.8, and the ASUS System Control Interface driver. NVIDIA readings use NVML from the installed NVIDIA driver. No installer, web runtime, package dependencies, added services or scheduled tasks.
-
-Each push to `master` builds and tests the app on Windows, then publishes a GitHub release. You do not need to compile it to use it on another PC.
+You need Windows 10 or 11 and the ASUS System Control Interface driver. GPU readings need the NVIDIA driver.
 
 ## Controls
 
@@ -65,7 +63,7 @@ Read-only diagnostics:
 .\dist\LittleArmoury.exe --diagnostics diagnostics.txt
 ```
 
-ASUS preset and fan-curve writes are not exercised by the automated suite. Release builds use the regular suite; they do not exercise hardware on a GitHub runner.
+ASUS preset and fan-curve writes are not exercised by the automated suite.
 
 ## Implementation and license
 
