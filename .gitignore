@@ -1,0 +1,25 @@
+# Generated binaries, test output, local diagnostics and profiles
+/dist/
+/dist-next/
+/artifacts/
+/publish-staging/
+/publish-transfer/
+/LittleArmoury-portable.zip
+/dashboard.png
+/diagnostics*.txt
+*.exe
+*.dll
+*.pdb
+*.zip
+modes.xml
+power-session.xml
+
+# Editor and OS files
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+.DS_Store
+Thumbs.db
+/COPY-REVIEW.md

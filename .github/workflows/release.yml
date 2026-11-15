@@ -1,0 +1,126 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Serialize release jobs without interrupting a publication already in progress.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/master'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # No -LivePowerPolicy: the hosted run never writes power plans or firmware settings.
+      - name: Test
+        shell: powershell
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\test.ps1
+          if ($LASTEXITCODE -ne 0) { throw "test.ps1 exited with code $LASTEXITCODE." }
+
+      - name: Build
+        shell: powershell
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
+          if ($LASTEXITCODE -ne 0) { throw "build.ps1 exited with code $LASTEXITCODE." }
+          foreach ($name in 'LittleArmoury.exe', 'LittleArmoury.exe.config') {
+            $file = Get-Item -LiteralPath (Join-Path 'dist' $name)
+            if ($file.Length -eq 0) { throw "dist\$name is empty." }
+          }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'LittleArmoury'
+          $out = Join-Path $env:RUNNER_TEMP 'release'
+          New-Item -ItemType Directory -Path $stage, $out -Force | Out-Null
+
+          Copy-Item -LiteralPath 'dist\LittleArmoury.exe', 'dist\LittleArmoury.exe.config' -Destination $stage
+          foreach ($optional in 'README.md', 'LICENSE', 'LICENSE.md', 'LICENSE.txt') {
+            if (Test-Path -LiteralPath $optional -PathType Leaf) { Copy-Item -LiteralPath $optional -Destination $stage }
+          }
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath (Join-Path $out 'LittleArmoury-portable.zip') -Force
+          Copy-Item -LiteralPath 'dist\LittleArmoury.exe', 'dist\LittleArmoury.exe.config' -Destination $out
+
+          $exe = (Resolve-Path -LiteralPath 'dist\LittleArmoury.exe').Path
+          $v = [System.Reflection.AssemblyName]::GetAssemblyName($exe).Version
+          $version = '{0}.{1}.{2}' -f $v.Major, $v.Minor, $v.Build
+          $short = $env:GITHUB_SHA.Substring(0, 7)
+          $tag = "v$version-build.$env:GITHUB_RUN_NUMBER.$short"
+          if ($tag -notmatch '^v\d+\.\d+\.\d+-build\.\d+\.[0-9a-f]{7}$') { throw "Unexpected tag '$tag'." }
+
+          $notes = @(
+            'Windows 10/11 x64 with .NET Framework 4.8. No installer: download `LittleArmoury.exe` and run it.'
+            ''
+            '`LittleArmoury-portable.zip` holds the same EXE with its config file, README and license.'
+            ''
+            "Built from $env:GITHUB_SHA."
+          )
+          Set-Content -LiteralPath (Join-Path $out 'notes.md') -Value $notes -Encoding utf8
+
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "RELEASE_TAG=$tag"
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "RELEASE_TITLE=Little Armoury $version (build $env:GITHUB_RUN_NUMBER)"
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "RELEASE_DIR=$out"
+
+      - name: Publish release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = $env:RELEASE_TAG
+          $notes = Join-Path $env:RELEASE_DIR 'notes.md'
+          $names = 'LittleArmoury.exe', 'LittleArmoury.exe.config', 'LittleArmoury-portable.zip'
+          $assets = $names | ForEach-Object { Join-Path $env:RELEASE_DIR $_ }
+          foreach ($asset in $assets) {
+            if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) { throw "Missing release asset: $asset" }
+          }
+
+          $json = gh release view $tag --json isDraft,assets 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            # New release. gh uploads the assets to a draft, then publishes it.
+            gh release create $tag @assets --target $env:GITHUB_SHA --title $env:RELEASE_TITLE --notes-file $notes --latest
+            if ($LASTEXITCODE -ne 0) { throw "gh release create failed with code $LASTEXITCODE." }
+            return
+          }
+
+          # Re-run of the same workflow run: the tag is the same, so finish what is there.
+          $existing = $json | ConvertFrom-Json
+          $present = @($existing.assets | ForEach-Object { $_.name })
+          $missing = @($names | Where-Object { $present -notcontains $_ })
+
+          if (-not $existing.isDraft -and $missing.Count -eq 0) {
+            Write-Host "Release $tag is already published with all assets."
+            return
+          }
+
+          if ($existing.isDraft) {
+            # Never published, so nobody has downloaded these: replace them all.
+            gh release upload $tag @assets --clobber
+          }
+          else {
+            $toUpload = $assets | Where-Object { $missing -contains (Split-Path -Leaf $_) }
+            gh release upload $tag @toUpload
+          }
+          if ($LASTEXITCODE -ne 0) { throw "gh release upload failed with code $LASTEXITCODE." }
+
+          if ($existing.isDraft) {
+            gh release edit $tag --draft=false --latest --title $env:RELEASE_TITLE --notes-file $notes
+            if ($LASTEXITCODE -ne 0) { throw "gh release edit failed with code $LASTEXITCODE." }
+          }
